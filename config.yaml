@@ -1,0 +1,70 @@
+# ============================================================
+# SmartVision-Track Configuration
+# ============================================================
+
+# --- Video Source ---
+source:
+  type: webcam          # webcam | rtsp | file
+  webcam_index: 0
+  rtsp_url: ""          # e.g. rtsp://admin:pass@192.168.1.100/stream
+  file_path: ""
+  resolution: [1280, 720]
+  fps_cap: 30
+
+# --- YOLOv8 Detection ---
+detection:
+  model: "yolov8s.pt"           # yolov8n.pt (fastest) | yolov8s.pt | yolov8m.pt
+  confidence: 0.45              # Ngưỡng confidence tối thiểu
+  iou_threshold: 0.45           # NMS IoU threshold
+  device: "cuda"                # cuda | cpu | mps
+  half_precision: true          # FP16 cho CUDA (nhanh hơn ~2x)
+  frame_skip: 2                 # Chỉ inference mỗi N frames (1 = không skip)
+  input_size: 640
+
+# --- DeepSORT Tracking ---
+tracking:
+  max_age: 30           # Số frame giữ track khi mất dấu (occlusion)
+  n_init: 3             # Số frame liên tiếp để confirm track mới
+  max_iou_distance: 0.7
+  max_cosine_distance: 0.3
+  nn_budget: 100        # Số lượng feature vectors lưu trữ per track
+  embedder: "mobilenet" # mobilenet | torchreid | clip_RN50
+
+# --- Crossing Line ---
+counter:
+  # Line được định nghĩa bởi 2 điểm (x1,y1) và (x2,y2)
+  # Tọa độ relative (0.0 - 1.0) so với kích thước frame
+  line_start: [0.0, 0.5]   # x=0%, y=50% (giữa màn hình, ngang)
+  line_end:   [1.0, 0.5]
+  direction_axis: "vertical"   # vertical (line ngang, đếm lên/xuống)
+                                # horizontal (line dọc, đếm trái/phải)
+  # Offset pixel để xác định "đã qua line" (tránh flicker)
+  crossing_threshold: 5
+
+# --- Logging ---
+logging:
+  csv_path: "logs/events.csv"
+  db_path: "data/events.db"
+  log_every_n_events: 1        # Ghi log mỗi N events
+  flush_interval_sec: 5        # Flush buffer xuống disk mỗi N giây
+
+# --- Performance ---
+performance:
+  async_mode: true             # Tách UI thread & AI thread
+  queue_maxsize: 4             # Max frames trong processing queue
+  display_fps: true
+  show_tracks: true
+  show_bboxes: true
+  show_ids: true
+  show_trails: true            # Vẽ lịch sử quỹ đạo
+  trail_length: 30             # Số frame trail
+
+# --- UI Display ---
+display:
+  window_name: "SmartVision-Track"
+  line_color: [0, 255, 100]    # BGR
+  bbox_color_in:  [0, 200, 50]
+  bbox_color_out: [0, 50, 200]
+  text_color: [255, 255, 255]
+  font_scale: 0.6
+  overlay_alpha: 0.35          # Transparency của stats overlay
