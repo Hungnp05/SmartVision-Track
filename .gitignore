@@ -1,0 +1,28 @@
+# --- Môi trường ảo (Virtual Environment) ---
+venv/
+env/
+.env
+
+# --- Python & Caching ---
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Cấu hình IDE (VS Code) ---
+.vscode/
+
+# --- Dữ liệu và Model (Quan trọng cho Computer Vision) ---
+data/
+logs/
+models/
+*.weights
+*.h5
+*.pth
+*.onnx
+*.pb
+
+# --- Hệ điều hành ---
+.DS_Store
+Thumbs.db
