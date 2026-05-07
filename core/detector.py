@@ -1,8 +1,3 @@
-"""
-core/detector.py
-YOLOv8 inference wrapper với frame skipping & GPU acceleration.
-"""
-
 import cv2
 import numpy as np
 from ultralytics import YOLO
