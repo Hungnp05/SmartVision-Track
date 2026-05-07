@@ -149,37 +149,42 @@ class SmartVisionPipeline:
             except queue.Empty:
                 continue
 
-            # ── Inference 
+            # ── Inference ──────────────────────────────────────────────
             detections = self.detector.detect(frame)
             tracks     = self.tracker.update(detections, frame)
             events     = self.counter.process_tracks(tracks)
 
-            # ── Log events 
+            # ── Log events ─────────────────────────────────────────────
             for ev in events:
                 try:
                     self.event_queue.put_nowait(ev)
                 except queue.Full:
                     pass
 
-            # ── FPS counter
+            # ── Stats: cập nhật counts NGAY LẬP TỨC mỗi frame ────────
             fps_count   += 1
             total_count += 1
             now = time.time()
-            if now - fps_timer >= 1.0:
-                stats = self.counter.get_stats()
-                with self._lock:
-                    self._stats.update({
-                        "fps":           fps_count,
-                        "count_in":      stats["count_in"],
-                        "count_out":     stats["count_out"],
-                        "occupancy":     stats["current_occupancy"],
-                        "active_tracks": stats["active_tracks"],
-                        "frame_count":   total_count,
-                    })
-                fps_count = 0
-                fps_timer = now
+            elapsed_fps = now - fps_timer
+            if elapsed_fps >= 1.0:
+                computed_fps = round(fps_count / elapsed_fps, 1)
+                fps_count    = 0
+                fps_timer    = now
+            else:
+                computed_fps = None
 
-            # ── Draw ─────
+            cs = self.counter.get_stats()
+            with self._lock:
+                if computed_fps is not None:
+                    self._stats["fps"] = computed_fps
+                # counts cập nhật MỌI frame, không chờ 1 giây
+                self._stats["count_in"]       = cs["count_in"]
+                self._stats["count_out"]      = cs["count_out"]
+                self._stats["occupancy"]      = cs["current_occupancy"]
+                self._stats["active_tracks"]  = cs["active_tracks"]
+                self._stats["frame_count"]    = total_count
+
+            # ── Draw ───────────────────────────────────────────────────
             with self._lock:
                 current_stats = dict(self._stats)
             annotated = self.drawer.draw_all(
