@@ -1,13 +1,3 @@
-"""
-core/tracker.py
-DeepSORT tracker wrapper.
-
-DeepSORT kết hợp:
-- Kalman Filter: dự đoán vị trí khi bị mất dấu
-- Re-ID CNN (MobileNet): trích xuất appearance feature
-- Hungarian Algorithm: khớp detection với existing tracks
-"""
-
 import numpy as np
 from deep_sort_realtime.deepsort_tracker import DeepSort
 import logging
