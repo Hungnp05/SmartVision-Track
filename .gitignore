@@ -1,28 +1,34 @@
-# --- Môi trường ảo (Virtual Environment) ---
+# Virtual environment
 venv/
+.venv/
 env/
-.env
 
-# --- Python & Caching ---
+# Python cache
 __pycache__/
 *.py[cod]
-*$py.class
-.pytest_cache/
-.ipynb_checkpoints/
+*.pyo
+*.pyd
+.Python
 
-# --- Cấu hình IDE (VS Code) ---
-.vscode/
-
-# --- Dữ liệu và Model (Quan trọng cho Computer Vision) ---
-data/
+# Runtime data
+data/events.db
 logs/
-models/
-*.weights
-*.h5
-*.pth
-*.onnx
-*.pb
+*.csv
+*.log
 
-# --- Hệ điều hành ---
+# Model weights (download khi cần)
+*.pt
+*.engine
+*.trt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Streamlit
+.streamlit/
