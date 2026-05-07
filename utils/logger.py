@@ -1,8 +1,3 @@
-"""
-utils/logger.py
-Thread-safe event logger: ghi sự kiện crossing ra CSV và SQLite.
-"""
-
 import csv
 import sqlite3
 import os
