@@ -1,7 +1,3 @@
-# ============================================================
-# SmartVision-Track Configuration
-# ============================================================
-
 # --- Video Source ---
 source:
   type: webcam          # webcam | rtsp | file
