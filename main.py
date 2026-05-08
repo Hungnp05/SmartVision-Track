@@ -7,9 +7,9 @@ import time
 import math
 import numpy as np
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# Logging setup
+# Logging
 Path("logs").mkdir(exist_ok=True)
 Path("data").mkdir(exist_ok=True)
 logging.basicConfig(
@@ -23,18 +23,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-from core.pipeline import SmartVisionPipeline
+from core.pipeline        import SmartVisionPipeline
+from core.video_processor import VideoProcessor
 
 
 #  CLI
 
 def parse_args():
     p = argparse.ArgumentParser(description="SmartVision-Track")
+    p.add_argument("--mode",    choices=["live", "video"], default="live",
+                   help="live=webcam/RTSP realtime | video=xử lý file video")
     p.add_argument("--source",  default=None,
-                   help="0=webcam, 1=webcam2, path/to/video.mp4, rtsp://...")
+                   help="[live] 0=webcam, rtsp://..., v.v.")
+    p.add_argument("--video",   default=None,
+                   help="[video] đường dẫn tới file video cần xử lý")
     p.add_argument("--config",  default="config.yaml")
     p.add_argument("--headless", action="store_true",
-                   help="Chạy không GUI (chỉ log + CSV)")
+                   help="Không hiển thị cửa sổ OpenCV")
+    p.add_argument("--no-annotated", action="store_true",
+                   help="[video] Không lưu video annotated")
     return p.parse_args()
 
 
@@ -48,34 +55,27 @@ def save_cfg(cfg: dict, path: str):
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
 
 
-#  LOADING SCREEN
+#  LOADING SCREEN (dùng cho chế độ live)
 
 def draw_loading(frame: np.ndarray, msg: str, elapsed: float) -> np.ndarray:
     out = frame.copy()
     h, w = out.shape[:2]
-
-    # Dim
     ov = out.copy()
     cv2.rectangle(ov, (0,0), (w,h), (0,0,0), -1)
     cv2.addWeighted(ov, 0.55, out, 0.45, 0, out)
 
     bw, bh = min(500, w-40), 120
-    bx = (w - bw) // 2
-    by = (h - bh) // 2
-
-    # Box
-    cv2.rectangle(out, (bx,by), (bx+bw, by+bh), (12,12,12), -1)
+    bx, by = (w-bw)//2, (h-bh)//2
+    cv2.rectangle(out, (bx,by), (bx+bw,by+bh), (12,12,12), -1)
     cv2.rectangle(out, (bx-1,by-1), (bx+bw+1,by+bh+1), (0,200,90), 2)
 
-    # Spinner
-    cx_s, cy_s = bx+42, by+bh//2
+    cxs, cys = bx+42, by+bh//2
     angle = (elapsed * 320) % 360
     for i in range(10):
         a  = math.radians(angle + i*36)
-        px = int(cx_s + 17*math.cos(a))
-        py = int(cy_s + 17*math.sin(a))
-        c  = int(255 * (i+1) / 10)
-        cv2.circle(out, (px,py), 3, (0, c, 60), -1)
+        px = int(cxs + 17*math.cos(a))
+        py = int(cys + 17*math.sin(a))
+        cv2.circle(out, (px,py), 3, (0, int(255*(i+1)/10), 60), -1)
 
     f = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(out, "SmartVision-Track  —  Dang tai model...",
@@ -85,24 +85,16 @@ def draw_loading(frame: np.ndarray, msg: str, elapsed: float) -> np.ndarray:
     cv2.putText(out, f"Elapsed: {elapsed:.1f}s   (co the mat 10-20s lan dau)",
                 (bx+72, by+88), f, 0.40, (110,110,110), 1, cv2.LINE_AA)
 
-    # Pulse bar
-    bpw = bw - 20
-    bpx = bx + 10
-    bpy = by + bh - 14
-    cv2.rectangle(out, (bpx,bpy), (bpx+bpw, bpy+7), (35,35,35), -1)
+    bpw = bw-20; bpx = bx+10; bpy = by+bh-14
+    cv2.rectangle(out, (bpx,bpy), (bpx+bpw,bpy+7), (35,35,35), -1)
     pulse = int((math.sin(elapsed*2.5)+1)/2 * bpw)
-    cv2.rectangle(out, (bpx,bpy), (bpx+pulse, bpy+7), (0,200,80), -1)
-
+    cv2.rectangle(out, (bpx,bpy), (bpx+pulse,bpy+7), (0,200,80), -1)
     return out
 
 
-#  MAIN
+#  MODE 1: LIVE (webcam / RTSP)
 
-def main():
-    args = parse_args()
-    cfg  = load_cfg(args.config)
-
-    # Resolve source
+def run_live(args, cfg):
     src = args.source
     if src is None:
         src = cfg["source"]["webcam_index"]
@@ -110,35 +102,30 @@ def main():
         src = int(src)
 
     logger.info("=" * 60)
-    logger.info("  SmartVision-Track — khoi dong")
+    logger.info("  CHE DO: LIVE")
     logger.info(f"  Source : {src}")
-    logger.info(f"  Model  : {cfg['detection']['model']}")
-    logger.info(f"  Device : {cfg['detection']['device']}")
+    logger.info(f"  Output : data/live_track_<ngay>.csv")
     logger.info("=" * 60)
 
     pipeline = SmartVisionPipeline(cfg)
-
-    # 1. Mở camera (< 1 giây)
     try:
         w, h = pipeline.open_source(src)
-        logger.info(f"Camera: {w}x{h}")
     except RuntimeError as e:
         logger.error(f"Khong mo duoc camera: {e}")
         sys.exit(1)
 
-    win = cfg["display"]["window_name"]
+    win      = cfg["display"]["window_name"]
     headless = args.headless
 
     if not headless:
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, min(w, 1280), min(h, 720))
-        logger.info("Phim tat: Q=thoat  R=reset  S=screenshot  +/-=di line  H=help  SPACE=pause")
+        logger.info("Phim tat: Q=thoat  R=reset  S=screenshot  +/-=di line  SPACE=pause")
 
-    # 2. Khởi động background threads
-    pipeline.start_init_async()    # load YOLO + DeepSORT
-    pipeline.start_pipeline()      # capture thread bắt đầu ngay
+    pipeline.start_init_async()
+    pipeline.start_pipeline()
 
-    # 3. Loading screen loop
+    # Loading screen
     t0         = time.time()
     last_raw   = None
     load_msgs  = [
@@ -150,8 +137,6 @@ def main():
 
     while not pipeline.is_ready():
         elapsed = time.time() - t0
-
-        # Snapshot raw frame mới nhất từ camera
         try:
             q = pipeline.raw_queue.queue
             if q:
@@ -159,157 +144,245 @@ def main():
         except Exception:
             pass
 
-        base = (last_raw.copy()
-                if last_raw is not None
-                else np.zeros((h, w, 3), dtype=np.uint8))
-
-        msg = load_msgs[min(int(elapsed / 5), len(load_msgs)-1)]
+        base    = last_raw.copy() if last_raw is not None else np.zeros((h,w,3), dtype=np.uint8)
+        msg     = load_msgs[min(int(elapsed/5), len(load_msgs)-1)]
         display = draw_loading(base, msg, elapsed)
 
         if not headless:
             cv2.imshow(win, display)
-            key = cv2.waitKey(30) & 0xFF
-            if key in (ord("q"), 27):     # Q hoặc ESC
+            if cv2.waitKey(30) & 0xFF in (ord("q"), 27):
                 pipeline.stop()
                 cv2.destroyAllWindows()
                 return
 
         if pipeline._init_error:
             logger.error(f"Model load FAILED: {pipeline._init_error}")
-            if not headless:
-                cv2.putText(display, "ERROR! Xem terminal de biet them.",
-                            (20, h//2), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.8, (0,0,230), 2, cv2.LINE_AA)
-                cv2.imshow(win, display)
-                cv2.waitKey(5000)
-                cv2.destroyAllWindows()
             pipeline.stop()
             sys.exit(1)
 
-    logger.info(f"✅ Models loaded in {time.time()-t0:.1f}s")
-    logger.info("=== BAT DAU INFERENCE REALTIME ===")
+    logger.info(f" Ready in {time.time()-t0:.1f}s — BAT DAU LIVE")
 
-    # 4. Realtime loop
+    # Realtime loop
     screenshot_n = 0
     paused       = False
-    show_help    = True
-    last_frame   = None      # frame cache khi không có frame mới
-
-    # Tham số dịch line (bước 5%)
-    LINE_STEP = 0.05
+    last_frame   = None
+    LINE_STEP    = 0.05
 
     while True:
-        # Lấy frame mới nhất từ AI thread
         frame = pipeline.get_frame()
-
         if frame is not None:
             last_frame = frame
         else:
-            # Không có frame mới → dùng frame cũ (không để trắng màn)
             frame = last_frame
             if not pipeline.running:
                 logger.info("Stream ket thuc")
                 break
+            ai_alive = any(t.name == "ai" and t.is_alive() for t in pipeline._threads)
+            if not ai_alive:
+                logger.error("AI thread da chet! Xem loi o terminal.")
+                break
 
         if frame is None:
-            # Chưa có frame nào cả — chờ
             if not headless:
                 cv2.waitKey(10)
             continue
 
         if not headless:
-            if not paused:
-                cv2.imshow(win, frame)
-            else:
-                # Pause: vẽ chữ PAUSED lên frame
-                paused_frame = frame.copy()
-                txt = "  PAUSED — nhan SPACE de tiep tuc  "
-                (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-                tx = (w - tw) // 2
-                ty = h // 2
-                cv2.rectangle(paused_frame, (tx-10, ty-th-10),
-                              (tx+tw+10, ty+10), (20,20,20), -1)
-                cv2.putText(paused_frame, txt, (tx, ty),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                            (0,200,200), 2, cv2.LINE_AA)
-                cv2.imshow(win, paused_frame)
-
+            cv2.imshow(win, frame if not paused else _draw_paused(frame.copy(), w, h))
             key = cv2.waitKey(1) & 0xFF
 
-            # Phím tắt
-            if key in (ord("q"), 27):          # Q / ESC = thoát
-                break
-
-            elif key == ord("r"):              # R = reset counts
+            if   key in (ord("q"), 27):  break
+            elif key == ord("r"):
                 pipeline.counter.reset_counts()
-                logger.info(">> Counts reset ve 0")
-
-            elif key == ord("s"):              # S = screenshot
-                ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+                logger.info(">> Counts reset")
+            elif key == ord("s"):
+                ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
                 fname = f"logs/screenshot_{ts}.jpg"
                 cv2.imwrite(fname, frame)
                 logger.info(f">> Screenshot: {fname}")
-                screenshot_n += 1
-
-            elif key == ord(" "):              # SPACE = pause/resume
+            elif key == ord(" "):
                 paused = not paused
                 logger.info(f">> {'PAUSED' if paused else 'RESUMED'}")
-
-            elif key == ord("h"):              # H = toggle help
-                show_help = not show_help
-
-            # Dịch crossing line
-            elif key in (ord("+"), ord("=")):  # + = line xuống
+            elif key in (ord("+"), ord("=")):
                 _shift_line(pipeline, cfg, args.config, dy=+LINE_STEP)
-
-            elif key == ord("-"):              # - = line lên
+            elif key == ord("-"):
                 _shift_line(pipeline, cfg, args.config, dy=-LINE_STEP)
-
-            elif key == ord("]"):              # ] = line phải
+            elif key == ord("]"):
                 _shift_line(pipeline, cfg, args.config, dx=+LINE_STEP)
-
-            elif key == ord("["):              # [ = line trái
+            elif key == ord("["):
                 _shift_line(pipeline, cfg, args.config, dx=-LINE_STEP)
 
-    # Cleanup
     pipeline.stop()
     if not headless:
         cv2.destroyAllWindows()
 
     stats = pipeline.get_stats()
     logger.info("=" * 45)
-    logger.info("  KET QUA PHIEN:")
+    logger.info("  KET QUA LIVE SESSION:")
     logger.info(f"    Tong vao  : {stats['count_in']}")
     logger.info(f"    Tong ra   : {stats['count_out']}")
     logger.info(f"    Con trong : {stats['occupancy']}")
-    logger.info(f"    Total FPS : {stats['frame_count']} frames")
+    logger.info(f"    CSV       : data/live_track_{datetime.now().strftime('%Y-%m-%d')}.csv")
     logger.info("=" * 45)
 
 
-#  HELPER: Dịch chuyển crossing line bằng phím tắt
+def _draw_paused(frame, w, h):
+    txt = "  PAUSED — nhan SPACE de tiep tuc  "
+    (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+    tx, ty = (w-tw)//2, h//2
+    cv2.rectangle(frame, (tx-10,ty-th-10), (tx+tw+10,ty+10), (20,20,20), -1)
+    cv2.putText(frame, txt, (tx,ty), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                (0,200,200), 2, cv2.LINE_AA)
+    return frame
 
-def _shift_line(pipeline, cfg: dict, cfg_path: str,
-                dx: float = 0.0, dy: float = 0.0):
-    """Dịch line theo dx/dy relative, cập nhật pipeline & config."""
-    counter_cfg = cfg["counter"]
-    ls = list(counter_cfg["line_start"])
-    le = list(counter_cfg["line_end"])
 
-    ls[0] = max(0.0, min(1.0, ls[0] + dx))
-    ls[1] = max(0.0, min(1.0, ls[1] + dy))
-    le[0] = max(0.0, min(1.0, le[0] + dx))
-    le[1] = max(0.0, min(1.0, le[1] + dy))
-
-    counter_cfg["line_start"] = ls
-    counter_cfg["line_end"]   = le
-
-    # Cập nhật ngay vào pipeline đang chạy
+def _shift_line(pipeline, cfg, cfg_path, dx=0.0, dy=0.0):
+    c  = cfg["counter"]
+    ls = [max(0.0,min(1.0,c["line_start"][0]+dx)), max(0.0,min(1.0,c["line_start"][1]+dy))]
+    le = [max(0.0,min(1.0,c["line_end"][0]+dx)),   max(0.0,min(1.0,c["line_end"][1]+dy))]
+    c["line_start"], c["line_end"] = ls, le
     if pipeline.counter:
         pipeline.counter.update_line(tuple(ls), tuple(le))
-
-    # Lưu config để giữ lại sau khi restart
     save_cfg(cfg, cfg_path)
-    logger.info(f">> Line moved → start={ls}  end={le}")
+    logger.info(f">> Line → start={ls} end={le}")
+
+
+#  MODE 2: VIDEO FILE
+
+def run_video(args, cfg):
+    video_path = args.video
+    if video_path is None:
+        # Không có --video → hỏi đường dẫn
+        logger.info("Khong co --video, nhap duong dan file video:")
+        video_path = input("  Video path: ").strip().strip('"').strip("'")
+
+    video_path = Path(video_path)
+    if not video_path.exists():
+        logger.error(f"File khong ton tai: {video_path}")
+        sys.exit(1)
+
+    save_annotated = not args.no_annotated
+
+    logger.info("=" * 60)
+    logger.info("  CHE DO: VIDEO")
+    logger.info(f"  File   : {video_path}")
+    logger.info(f"  Output : data/video_track_{video_path.stem}_<ts>.csv")
+    logger.info(f"  Video annotated: {'Co' if save_annotated else 'Khong'}")
+    logger.info("=" * 60)
+
+    # Hiển thị preview window (nếu không headless)
+    headless = args.headless
+    win      = "SmartVision-Track — Video Processing"
+
+    if not headless:
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win, 960, 540)
+
+    processor = VideoProcessor(cfg)
+
+    last_progress_frame = [None]   # closure để hiển thị preview
+
+    def progress_cb(frame_no, total_frames, fps_proc):
+        if not headless and frame_no % 5 == 0:
+            # Lấy frame hiện tại từ video để preview
+            pct = frame_no / max(total_frames, 1)
+            _show_video_progress_screen(
+                win, frame_no, total_frames, fps_proc, pct,
+                video_path.name
+            )
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):
+                raise KeyboardInterrupt("User cancelled video processing")
+
+    try:
+        result = processor.process(
+            video_path,
+            save_annotated=save_annotated,
+            progress_cb=progress_cb if not headless else None,
+        )
+    except KeyboardInterrupt:
+        logger.info("Nguoi dung huy xu ly video")
+        if not headless:
+            cv2.destroyAllWindows()
+        return
+
+    if not headless:
+        cv2.destroyAllWindows()
+
+    # Kết quả
+    logger.info("")
+    logger.info("╔══════════════════════════════════════════════╗")
+    logger.info("║           KET QUA XU LY VIDEO               ║")
+    logger.info("╠══════════════════════════════════════════════╣")
+    logger.info(f"║  File video  : {video_path.name[:42]:<42}║")
+    logger.info(f"║  Thoi luong  : {str(timedelta(seconds=int(result['duration_sec']))):<42}║")
+    logger.info(f"║  Tong frames : {result['total_frames']:<42}║")
+    logger.info(f"║  Thoi gian XL: {result['process_time']:.1f}s{'':<38}║")
+    logger.info(f"║  Tong IN     : {result['total_in']:<42}║")
+    logger.info(f"║  Tong OUT    : {result['total_out']:<42}║")
+    logger.info(f"║  Events      : {result['event_count']:<42}║")
+    logger.info(f"║  CSV         : {str(result['csv_path'])[-42:]:<42}║")
+    if result.get("annotated_path"):
+        logger.info(f"║  Video XL    : {str(result['annotated_path'])[-42:]:<42}║")
+    logger.info("╚══════════════════════════════════════════════╝")
+
+
+def _show_video_progress_screen(win, frame_no, total_frames, fps_proc, pct, filename):
+    """Hiển thị màn hình tiến độ xử lý video trong OpenCV window."""
+    h, w = 540, 960
+    canvas = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Title
+    f = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(canvas, "SmartVision-Track — Dang xu ly video...",
+                (30, 50), f, 0.9, (0, 210, 100), 2, cv2.LINE_AA)
+    cv2.putText(canvas, f"File: {filename}",
+                (30, 90), f, 0.55, (160, 160, 160), 1, cv2.LINE_AA)
+
+    # Progress bar
+    bar_x, bar_y, bar_w, bar_h2 = 30, 150, w-60, 40
+    cv2.rectangle(canvas, (bar_x, bar_y), (bar_x+bar_w, bar_y+bar_h2), (40,40,40), -1)
+    filled = int(pct * bar_w)
+    cv2.rectangle(canvas, (bar_x, bar_y), (bar_x+filled, bar_y+bar_h2), (0,200,80), -1)
+    cv2.rectangle(canvas, (bar_x-1, bar_y-1), (bar_x+bar_w+1, bar_y+bar_h2+1), (80,80,80), 1)
+
+    pct_txt = f"{pct*100:.1f}%"
+    (tw,_),_ = cv2.getTextSize(pct_txt, f, 0.7, 2)
+    cv2.putText(canvas, pct_txt, (bar_x + bar_w//2 - tw//2, bar_y+28),
+                f, 0.7, (255,255,255), 2, cv2.LINE_AA)
+
+    # Stats
+    stats = [
+        ("Frame",    f"{frame_no} / {total_frames}"),
+        ("Toc do",   f"{fps_proc:.1f} FPS"),
+        ("Tien do",  f"{pct*100:.1f}%"),
+    ]
+    if fps_proc > 0 and total_frames > 0:
+        eta = (total_frames - frame_no) / fps_proc
+        stats.append(("ETA", str(timedelta(seconds=int(eta)))))
+
+    for i, (label, val) in enumerate(stats):
+        x = 30 + i * 230
+        y = 240
+        cv2.putText(canvas, label, (x, y),       f, 0.5,  (120,120,120), 1, cv2.LINE_AA)
+        cv2.putText(canvas, val,   (x, y+32),     f, 0.75, (220,220,220), 1, cv2.LINE_AA)
+
+    cv2.putText(canvas, "Nhan Q de huy...",
+                (30, h-30), f, 0.45, (100,100,100), 1, cv2.LINE_AA)
+
+    cv2.imshow(win, canvas)
+
+
+#  ENTRY POINT
+
+def main():
+    args = parse_args()
+    cfg  = load_cfg(args.config)
+
+    if args.mode == "video":
+        run_video(args, cfg)
+    else:
+        run_live(args, cfg)
 
 
 if __name__ == "__main__":
