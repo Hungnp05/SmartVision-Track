@@ -11,8 +11,9 @@ FONT      = cv2.FONT_HERSHEY_SIMPLEX
 FONT_MONO = cv2.FONT_HERSHEY_PLAIN
 
 
-def id_to_color(track_id: int) -> tuple[int, int, int]:
+def id_to_color(track_id) -> tuple[int, int, int]:
     """Màu unique per track ID (HSV → BGR)."""
+    track_id = int(track_id)  # DeepSORT có thể trả về str
     hue   = (track_id * 47 + 30) % 180
     color = np.array([[[hue, 210, 230]]], dtype=np.uint8)
     bgr   = cv2.cvtColor(color, cv2.COLOR_HSV2BGR)[0][0]
