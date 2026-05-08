@@ -60,9 +60,9 @@ class PersonTracker:
             ltrb = track.to_ltrb()  # [x1, y1, x2, y2]
             x1, y1, x2, y2 = [int(v) for v in ltrb]
             active_tracks.append({
-                "id": tid,
+                "id": int(tid),  # ép int vì DeepSORT có thể trả str
                 "bbox": [x1, y1, x2, y2],
-                "confidence": track.det_conf or 0.0,
+                "confidence": float(track.det_conf or 0.0),
             })
 
         return active_tracks
