@@ -149,19 +149,19 @@ class SmartVisionPipeline:
             except queue.Empty:
                 continue
 
-            # ── Inference ──────────────────────────────────────────────
+            # Inference
             detections = self.detector.detect(frame)
             tracks     = self.tracker.update(detections, frame)
             events     = self.counter.process_tracks(tracks)
 
-            # ── Log events ─────────────────────────────────────────────
+            # Log events
             for ev in events:
                 try:
                     self.event_queue.put_nowait(ev)
                 except queue.Full:
                     pass
 
-            # ── Stats: cập nhật counts NGAY LẬP TỨC mỗi frame ────────
+            # Stats: cập nhật counts NGAY LẬP TỨC mỗi frame
             fps_count   += 1
             total_count += 1
             now = time.time()
@@ -184,7 +184,7 @@ class SmartVisionPipeline:
                 self._stats["active_tracks"]  = cs["active_tracks"]
                 self._stats["frame_count"]    = total_count
 
-            # ── Draw ───────────────────────────────────────────────────
+            # Draw
             with self._lock:
                 current_stats = dict(self._stats)
             annotated = self.drawer.draw_all(
@@ -208,8 +208,14 @@ class SmartVisionPipeline:
 
     #  THREAD: Logger
     def _logger_thread(self):
-        logger.info("[Logger] Thread started")
-        last_flush    = time.time()
+        logger.info("[Logger] Thread started — waiting for init...")
+        self._init_done.wait()  # Đợi event_log được khởi tạo
+        if self._init_error or self.event_log is None:
+            logger.error("[Logger] Init failed, thread stopping")
+            return
+
+        logger.info("[Logger] Ready")
+        last_flush     = time.time()
         flush_interval = self.cfg["logging"]["flush_interval_sec"]
 
         while self.running or not self.event_queue.empty():
