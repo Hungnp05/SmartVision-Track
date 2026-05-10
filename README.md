@@ -435,3 +435,11 @@ tracking:
 | `plotly` | ≥ 5.17 | Interactive charts |
 | `pandas` | ≥ 2.0 | CSV data processing |
 | `PyYAML` | ≥ 6.0 | Config file read/write |
+
+
+## Use app without download code:
+The recipient just needs:
+1. download zip file: https://drive.google.com/file/d/1gOdjutdl--EbpLJjyT6OaUo_jFxPQTqO/view?usp=sharing
+2. Unzip the zip
+3. Double-click run.bat
+4. Select mode → done
