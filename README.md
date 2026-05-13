@@ -18,6 +18,13 @@ The system runs entirely **offline** — no internet required — directly on lo
 
 ---
 
+## Use app without download code:
+The recipient just needs:
+1. download zip file: https://drive.google.com/file/d/1v2KRTeALUYwHA5FwqRoq0eAOqE2PulsB/view?usp=sharing
+2. Unzip the zip
+3. Double-click run.bat
+4. Select mode → done
+
 ## Performance
 
 | Hardware | Model | Detection FPS | Display FPS |
@@ -437,9 +444,3 @@ tracking:
 | `PyYAML` | ≥ 6.0 | Config file read/write |
 
 
-## Use app without download code:
-The recipient just needs:
-1. download zip file: https://drive.google.com/file/d/1v2KRTeALUYwHA5FwqRoq0eAOqE2PulsB/view?usp=sharing
-2. Unzip the zip
-3. Double-click run.bat
-4. Select mode → done
